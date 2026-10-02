@@ -1,0 +1,52 @@
+{
+  "background_color": "#1b1d23",
+  "description": "Larecherches Note — carnet de notes personnel, hors-ligne, chiffré.",
+  "dir": "ltr",
+  "display": "standalone",
+  "name": "Larecherches Note",
+  "orientation": "portrait",
+  "scope": "https://laprout.github.io/Larecherches-note//",
+  "short_name": "LN",
+  "start_url": "/",
+  "theme_color": "#1b1d23",
+  "icons": [
+    {
+      "src": "https://laprout.github.io/Larecherches-note/ln-icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "isSquare": true,
+      "isPng": true,
+      "isWebp": false,
+      "isJpg": false,
+      "width": 192,
+      "is512x512": false,
+      "is256x256": false,
+      "is192x192": true
+    },
+    {
+      "src": "https://laprout.github.io/Larecherches-note/ln-icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "isSquare": true,
+      "isPng": true,
+      "isWebp": false,
+      "isJpg": false,
+      "width": 512,
+      "is512x512": true,
+      "is256x256": false,
+      "is192x192": false
+    },
+    {
+      "src": "https://laprout.github.io/Larecherches-note/ln-icon.png",
+      "isSquare": false,
+      "isPng": true,
+      "isWebp": false,
+      "isJpg": false,
+      "width": 0,
+      "is512x512": false,
+      "is256x256": false,
+      "is192x192": false
+    }
+  ],
+  "lang": "fr"
+}
