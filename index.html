@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#1b1d23" />
+<meta name="description" content="Larecherches Note — carnet de notes personnel, hors-ligne, chiffré." />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="LN" />
+<title>Larecherches Note</title>
+
+<link rel="manifest" href='data:application/manifest+json,{
+  "name":"Larecherches Note","short_name":"LN",
+  "description":"Carnet de notes hors-ligne, chiffré, sans expiration.",
+  "start_url":"./","scope":"./","display":"standalone","orientation":"any",
+  "background_color":"#ffffff","theme_color":"#1b1d23",
+  "categories":["productivity","utilities"],"lang":"fr","dir":"ltr",
+  "icons":[
+    {"src":"ln-icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},
+    {"src":"ln-icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"},
+    {"src":"ln-icon-maskable.png","sizes":"512x512","type":"image/png","purpose":"maskable"},
+    {"src":"ln-icon.png","sizes":"any","type":"image/png","purpose":"any"}
+  ]
+}' />
+
+<link rel="icon" type="image/png" sizes="192x192" href="ln-icon-192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="ln-icon-512.png" />
+<link rel="shortcut icon" href="ln-icon.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="ln-icon-192.png" />
+<link rel="apple-touch-icon" sizes="192x192" href="ln-icon-192.png" />
+<link rel="apple-touch-icon" sizes="512x512" href="ln-icon-512.png" />
+<meta name="msapplication-TileImage" content="ln-icon-512.png" />
+<meta name="msapplication-TileColor" content="#1b1d23" />
+
+<link rel="preconnect" href="https://unpkg.com" crossorigin />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js" crossorigin></script>
+<script type="text/babel" data-presets="react" src="app.js"></script>
+
+<script>
+(function () {
+  const SW_VERSION = "ln-v3-2025";
+  const PRECACHE = [
+    "./","./index.html","./app.js","./styles.css",
+    "./ln-icon.png","./ln-icon-192.png","./ln-icon-512.png","./ln-icon-maskable.png",
+    "https://unpkg.com/react@18.3.1/umd/react.production.min.js",
+    "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js",
+    "https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"
+  ];
+
+  const swCode = `
+    const VERSION = "${SW_VERSION}";
+    const PRECACHE = ${JSON.stringify(PRECACHE)};
+    const REMINDERS_FAKE_URL = "__ln-reminders";
+    const BACKUP_FAKE_URL = "__ln-backup-snapshot";
+    const HEALTH_FAKE_URL = "__ln-health";
+
+    const isCacheHealthy = async () => {
+      try {
+        const cache = await caches.open(VERSION);
+        const checks = await Promise.all(PRECACHE.map(u => cache.match(u, { ignoreSearch: true })));
+        return checks.filter(Boolean).length >= 3;
+      } catch { return false; }
+    };
+    const repairCache = async () => {
+      try {
+        const cache = await caches.open(VERSION);
+        await Promise.allSettled(PRECACHE.map(u => cache.add(new Request(u, { mode: "cross-origin" }))));
+        await markHealth(true);
+      } catch { await markHealth(false); }
+    };
+    const markHealth = async (ok) => {
+      try {
+        const cache = await caches.open(VERSION);
+        await cache.put(HEALTH_FAKE_URL, new Response(JSON.stringify({
+          ok, at: Date.now(), version: VERSION
+        }), { headers: { "Content-Type": "application/json" } }));
+      } catch {}
+    };
+
+    self.addEventListener("install", (e) => {
+      e.waitUntil((async () => {
+        const cache = await caches.open(VERSION);
+        await Promise.allSettled(PRECACHE.map(u => cache.add(new Request(u, { mode: "cross-origin" }))));
+        await markHealth(true);
+        self.skipWaiting();
+      })());
+    });
+
+    self.addEventListener("activate", (e) => {
+      e.waitUntil((async () => {
+        const keys = await caches.keys();
+        await Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k)));
+        if (!(await isCacheHealthy())) await repairCache();
+        await self.clients.claim();
+        setTimeout(async () => {
+          if (!(await isCacheHealthy())) await repairCache();
+        }, 3000);
+      })());
+    });
+
+    self.addEventListener("fetch", (e) => {
+      const req = e.request;
+      if (req.method !== "GET") return;
+      const url = new URL(req.url);
+
+      if (url.origin === self.location.origin && url.pathname.endsWith(HEALTH_FAKE_URL)) {
+        e.respondWith((async () => {
+          const ok = await isCacheHealthy();
+          await markHealth(ok);
+          return new Response(JSON.stringify({ ok, at: Date.now(), version: VERSION }),
+            { headers: { "Content-Type": "application/json" } });
+        })());
+        return;
+      }
+      if (url.hostname === "api.unsplash.com") return;
+
+      e.respondWith((async () => {
+        const cache = await caches.open(VERSION);
+        const cached = await cache.match(req, { ignoreSearch: true });
+        if (cached) return cached;
+        try {
+          const res = await fetch(req);
+          const cacheable = res.ok && (
+            url.origin === self.location.origin ||
+            url.hostname === "unpkg.com" ||
+            url.hostname === "fonts.googleapis.com" ||
+            url.hostname === "fonts.gstatic.com" ||
+            url.hostname.endsWith("unsplash.com")
+          );
+          if (cacheable) cache.put(req, res.clone());
+          return res;
+        } catch (err) {
+          const fb = await cache.match(req, { ignoreSearch: true });
+          if (fb) return fb;
+          if (req.destination === "image") return new Response("", { status: 204 });
+          if (req.mode === "navigate") {
+            const shell = await cache.match("./index.html");
+            if (shell) return shell;
+          }
+          throw err;
+        }
+      })());
+    });
+
+    const loadReminders = async () => {
+      try {
+        const cache = await caches.open(VERSION);
+        const res = await cache.match(REMINDERS_FAKE_URL);
+        return res ? await res.json() : [];
+      } catch { return []; }
+    };
+    const saveReminders = async (list) => {
+      const cache = await caches.open(VERSION);
+      await cache.put(REMINDERS_FAKE_URL,
+        new Response(JSON.stringify(list), { headers: { "Content-Type": "application/json" } }));
+    };
+    const loadBackupSnapshot = async () => {
+      try {
+        const cache = await caches.open(VERSION);
+        const res = await cache.match(BACKUP_FAKE_URL);
+        return res ? await res.json() : null;
+      } catch { return null; }
+    };
+    const saveBackupSnapshot = async (obj) => {
+      const cache = await caches.open(VERSION);
+      await cache.put(BACKUP_FAKE_URL,
+        new Response(JSON.stringify(obj), { headers: { "Content-Type": "application/json" } }));
+    };
+
+    const checkDueReminders = async () => {
+      const now = Date.now();
+      const list = await loadReminders();
+      const remaining = [], due = [];
+      for (const r of list) {
+        if (r.triggerAt <= now && now - r.triggerAt < 24 * 3600 * 1000) due.push(r);
+        else if (r.triggerAt > now) remaining.push(r);
+      }
+      for (const r of due) {
+        try {
+          await self.registration.showNotification(r.title, {
+            body: r.body || "", icon: "ln-icon-192.png", badge: "ln-icon-192.png",
+            tag: "ln-reminder-" + r.id, requireInteraction: true,
+            vibrate: [200, 100, 200],
+            data: { eventId: r.id, url: self.registration.scope }
+          });
+        } catch {}
+      }
+      if (due.length) {
+        await saveReminders(remaining);
+        const clients = await self.clients.matchAll({ type: "window" });
+        clients.forEach(c => c.postMessage({ type: "LN_REMINDERS_FIRED", ids: due.map(d => d.id) }));
+      }
+    };
+
+    self.addEventListener("periodicsync", (e) => {
+      if (e.tag === "ln-reminders") e.waitUntil(checkDueReminders());
+    });
+    self.addEventListener("sync", (e) => {
+      if (e.tag === "ln-reminders-sync") e.waitUntil(checkDueReminders());
+    });
+
+    self.addEventListener("message", (e) => {
+      const msg = e.data || {};
+      if (msg.type === "LN_SYNC_REMINDERS")
+        e.waitUntil(saveReminders(msg.reminders || []).then(checkDueReminders));
+      if (msg.type === "LN_CHECK_NOW") e.waitUntil(checkDueReminders());
+      if (msg.type === "LN_CLEAR_REMINDERS") e.waitUntil(saveReminders([]));
+      if (msg.type === "LN_STORE_BACKUP") e.waitUntil(saveBackupSnapshot(msg.snapshot || null));
+      if (msg.type === "LN_REQUEST_BACKUP") {
+        e.waitUntil((async () => {
+          const snap = await loadBackupSnapshot();
+          e.source?.postMessage({ type: "LN_BACKUP_SNAPSHOT", snapshot: snap });
+        })());
+      }
+      if (msg.type === "LN_FORCE_REPAIR") {
+        e.waitUntil(repairCache().then(() => e.source?.postMessage({ type: "LN_REPAIR_DONE", ok: true })));
+      }
+      if (msg.type === "LN_PING_HEALTH") {
+        e.waitUntil((async () => {
+          const ok = await isCacheHealthy();
+          e.ports?.[0]?.postMessage({ ok, version: VERSION, at: Date.now() });
+        })());
+      }
+    });
+
+    self.addEventListener("notificationclick", (e) => {
+      e.notification.close();
+      const targetUrl = (e.notification.data && e.notification.data.url) || "/";
+      e.waitUntil((async () => {
+        const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        const existing = all.find(c => c.url.startsWith(self.registration.scope));
+        if (existing) {
+          existing.focus();
+          existing.postMessage({ type: "LN_OPEN_EVENT", eventId: e.notification.data?.eventId });
+        } else {
+          await self.clients.openWindow(targetUrl);
+        }
+      })());
+    });
+
+    let keepAlive = null;
+    self.addEventListener("activate", () => {
+      if (keepAlive) clearInterval(keepAlive);
+      keepAlive = setInterval(() => {
+        checkDueReminders();
+        isCacheHealthy().then(ok => { if (!ok) repairCache(); });
+      }, 15 * 60 * 1000);
+    });
+  `;
+
+  if ("serviceWorker" in navigator) {
+    const blob = new Blob([swCode], { type: "text/javascript" });
+    const url = URL.createObjectURL(blob);
+    navigator.serviceWorker.register(url)
+      .then(reg => reg.update().catch(() => {}))
+      .catch(e => console.warn("SW:", e));
+  }
+})();
+</script>
+</body>
+</html>
